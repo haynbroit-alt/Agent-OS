@@ -5,7 +5,7 @@ from core.memory import Memory
 from core.planner import Planner
 from core.tools import Tools
 from core.loop import run_agent
-from core.policy_cache import PolicyCache, run_audit
+from core.policy_cache import PolicyCache, run_audit, bootstrap_from_episodes
 from core.observer import Observer
 from core.decision_log import tail as log_tail
 from core.utils import pretty
@@ -22,8 +22,12 @@ planner = Planner(llm)
 tools = Tools()
 observer = Observer(memory, policy_cache, planner)
 
+seeded = bootstrap_from_episodes(policy_cache, memory)
+
 mode = "[DRY-RUN] " if args.dry_run else ""
 print(f"Agent OS ready. {mode}Shell allowlist: {sorted(tools.allowed)}")
+if seeded:
+    print(f"Bootstrapped {seeded} policy rule(s) from past episodes.")
 print("Commands: :obs  :clusters  :audit  :cache  :log  :dry <query>  :quit")
 
 while True:

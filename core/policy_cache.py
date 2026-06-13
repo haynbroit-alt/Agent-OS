@@ -217,3 +217,44 @@ def run_audit(cache, now_days_ago=7, auto_repair_threshold=_AUTO_REPAIR_THRESHOL
         "cache_health": round(cache_health, 3),
         "auto_repaired": auto_repaired,
     }
+
+
+# ─── Bootstrap from episodes ───────────────────────────────────────────────────
+
+def bootstrap_from_episodes(cache, memory, min_occurrences=2):
+    """Seed the policy cache from past successful episodes on startup.
+
+    Without this, the cache is empty after every restart even when the DB
+    contains hundreds of proven high-reward episodes.  Patterns that appeared
+    at least `min_occurrences` times with reward >= 0.7 are promoted to rules.
+
+    Returns the number of rules inserted.
+    """
+    from collections import Counter, defaultdict
+    from core.loop import _extract_rule_pattern
+
+    rows = memory.conn.execute(
+        "SELECT user_input, action, reward FROM episodes WHERE success=1 AND reward >= 0.7"
+    ).fetchall()
+
+    counts = Counter()
+    best_action = {}
+    rewards = defaultdict(list)
+
+    for user_input, action, reward in rows:
+        pattern = _extract_rule_pattern(user_input, action)
+        counts[pattern] += 1
+        best_action[pattern] = action
+        rewards[pattern].append(reward)
+
+    existing = {r["pattern"] for r in cache.get_rules("active")}
+    inserted = 0
+
+    for pattern, count in counts.items():
+        if count >= min_occurrences and pattern not in existing:
+            avg_r = sum(rewards[pattern]) / len(rewards[pattern])
+            confidence = min(0.80, 0.50 + avg_r * 0.35 + count * 0.02)
+            cache.add_rule(pattern=pattern, action=best_action[pattern], confidence=confidence)
+            inserted += 1
+
+    return inserted
