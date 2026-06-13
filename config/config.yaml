@@ -1,0 +1,20 @@
+# Execution Graph OS — configuration template
+# All values can be overridden with environment variables (AGENT_* prefix)
+
+llm:
+  model: llama3.2                       # AGENT_LLM_MODEL
+  url: http://localhost:11434           # AGENT_LLM_URL
+
+runtime:
+  budget: 20                            # AGENT_ACTION_BUDGET
+  db_path: db/agent.db                  # AGENT_DB_PATH
+  log_path: logs/decisions.jsonl        # AGENT_LOG_PATH
+
+tools:
+  allowed_commands:                     # AGENT_ALLOWED_COMMANDS (comma-separated)
+    - ls
+    - cat
+    - echo
+    - pwd
+    - wc
+    - date
