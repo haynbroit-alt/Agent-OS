@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Execution Graph OS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0a0a0a;
+      --surface: #111111;
+      --border:  #222222;
+      --text:    #e8e8e8;
+      --muted:   #666666;
+      --accent:  #4ade80;
+      --code-bg: #161616;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 14px;
+      line-height: 1.7;
+      padding: 0 1.5rem;
+    }
+
+    .container { max-width: 720px; margin: 0 auto; padding: 5rem 0 6rem; }
+
+    /* Hero */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: clamp(1.6rem, 5vw, 2.2rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+
+    h1 span { color: var(--accent); }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 15px;
+      max-width: 520px;
+      margin-bottom: 2.5rem;
+    }
+
+    /* Graph diagram */
+    .graph {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 2.5rem 0;
+      overflow-x: auto;
+    }
+
+    .graph-line {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      white-space: nowrap;
+    }
+
+    .node {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--surface);
+    }
+
+    .node.active { border-color: var(--accent); color: var(--accent); }
+
+    .arrow {
+      color: var(--muted);
+      padding: 0 6px;
+      font-size: 11px;
+    }
+
+    .graph-caption {
+      margin-top: 1rem;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* Install block */
+    .install {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .install-line {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text);
+    }
+
+    .install-line + .install-line { margin-top: 0.4rem; }
+
+    .prompt { color: var(--muted); user-select: none; }
+
+    /* Features */
+    .section-title {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 3rem 0 1.25rem;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .feature {
+      background: var(--surface);
+      padding: 1.25rem;
+    }
+
+    .feature-name {
+      font-size: 12px;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+    }
+
+    .feature-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* Commands */
+    .commands {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+
+    .cmd-row {
+      display: flex;
+      align-items: baseline;
+      gap: 1.5rem;
+      padding: 0.65rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .cmd-row:last-child { border-bottom: none; }
+
+    .cmd { color: var(--accent); min-width: 140px; flex-shrink: 0; }
+    .cmd-desc { color: var(--muted); }
+
+    /* Footer */
+    .footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: gap;
+      gap: 1rem;
+    }
+
+    .footer-left { font-size: 12px; color: var(--muted); }
+
+    .github-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--text);
+      text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .github-link:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Divider */
+    hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+    /* Graph animation */
+    .node {
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+    .node.visited {
+      border-color: #2a5c3a;
+      color: #4ade80aa;
+      background: #111f16;
+    }
+
+    /* Copy feedback */
+    .install-line {
+      cursor: pointer;
+      position: relative;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .install-line:hover { background: #1c1c1c; }
+
+    .copy-badge {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--muted);
+      opacity: 0;
+      transition: opacity 0.15s;
+      user-select: none;
+    }
+    .install-line:hover .copy-badge { opacity: 1; }
+    .install-line.copied .copy-badge {
+      color: var(--accent);
+      opacity: 1;
+    }
+
+    /* Graph tap hint */
+    .graph-caption { cursor: default; }
+    .graph { cursor: pointer; }
+
+    /* Terminal demo */
+    .terminal {
+      background: #080808;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 2.5rem 0;
+    }
+    .term-chrome {
+      background: #141414;
+      border-bottom: 1px solid var(--border);
+      padding: 0.55rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .term-dot { width: 9px; height: 9px; border-radius: 50%; background: #2a2a2a; }
+    .term-label { margin-left: 0.5rem; font-size: 11px; color: var(--muted); letter-spacing: 0.05em; }
+    .term-body {
+      padding: 1.25rem 1.5rem;
+      margin: 0;
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.95;
+      overflow: hidden;
+    }
+    @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+    .blink { animation: blink 0.75s step-end infinite; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="badge">local-first &nbsp;·&nbsp; MIT &nbsp;·&nbsp; Python 3.9+</div>
+
+  <h1>Execution <span>Graph</span> OS</h1>
+
+  <p class="subtitle">
+    AI execution runtime with full observability and safe tool execution.<br>
+    Every decision is a graph traversal — not a black box.
+  </p>
+
+  <div class="graph">
+    <div class="graph-line">
+      <span class="node">context</span>
+      <span class="arrow">→</span>
+      <span class="node">planner</span>
+      <span class="arrow">→</span>
+      <span class="node active">policy</span>
+      <span class="arrow">→</span>
+      <span class="node">executor</span>
+      <span class="arrow">→</span>
+      <span class="node">memory</span>
+      <span class="arrow">→</span>
+      <span class="node">observer</span>
+    </div>
+    <p class="graph-caption">
+      Each node is a registered module with a declared contract.
+      Each edge is a logged transition. Type <code>:graph</code> to inspect live.
+    </p>
+  </div>
+
+  <p class="section-title">In action</p>
+  <div class="terminal">
+    <div class="term-chrome">
+      <span class="term-dot"></span>
+      <span class="term-dot"></span>
+      <span class="term-dot"></span>
+      <span class="term-label">egos — execution graph os</span>
+    </div>
+    <div class="term-body" id="term-body"></div>
+  </div>
+
+  <div class="install">
+    <div class="install-line">
+      <span class="prompt">$</span>
+      <span>pip install -e .</span>
+      <span class="copy-badge">copy</span>
+    </div>
+    <div class="install-line">
+      <span class="prompt">$</span>
+      <span>ollama pull llama3.2</span>
+      <span class="copy-badge">copy</span>
+    </div>
+    <div class="install-line">
+      <span class="prompt">$</span>
+      <span>egos</span>
+      <span class="copy-badge">copy</span>
+    </div>
+  </div>
+
+  <hr>
+
+  <p class="section-title">Why it exists</p>
+
+  <p style="color: var(--muted); font-size: 13px; max-width: 560px; line-height: 1.8;">
+    AI tools can plan. But you cannot see or control what happens.<br>
+    Execution Graph OS fixes that: every action is an explicit edge,
+    logged, auditable, and replayable. You always know exactly what ran and why.
+  </p>
+
+  <p class="section-title">Features</p>
+
+  <div class="feature-grid">
+    <div class="feature">
+      <div class="feature-name">Execution graph model</div>
+      <div class="feature-desc">Nodes are modules. Edges are transitions. Conditions are evaluated against global state.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Dry-run mode</div>
+      <div class="feature-desc">Plan any action without executing. See estimated cost, blocked status, and score before committing.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">LLM bypass</div>
+      <div class="feature-desc">After 3 consistent successes, learned patterns skip the LLM entirely. Gets faster over time.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Safe tool execution</div>
+      <div class="feature-desc">Shell commands run against an allowlist. Blocked commands are logged, not silently dropped.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Counterfactual reasoning</div>
+      <div class="feature-desc">Ask what would have happened with a different action against real past episodes.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Self-diagnosis</div>
+      <div class="feature-desc">Behavioral drift, contradiction detection, failure root causes — rendered as a structured report.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Decision log</div>
+      <div class="feature-desc">Every decision appended to JSONL with full traversal path. Greppable. Pipeable. Permanent.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Local-first</div>
+      <div class="feature-desc">Runs on Ollama. Zero cloud dependency at runtime. Your data stays on your machine.</div>
+    </div>
+  </div>
+
+  <p class="section-title">REPL commands</p>
+
+  <div class="commands">
+    <div class="cmd-row"><span class="cmd">:graph</span><span class="cmd-desc">Visualize the execution graph (Mermaid + JSON)</span></div>
+    <div class="cmd-row"><span class="cmd">:obs</span><span class="cmd-desc">Health snapshot: success rate, reward trend, calibration</span></div>
+    <div class="cmd-row"><span class="cmd">:diagnose</span><span class="cmd-desc">Full behavioral self-analysis</span></div>
+    <div class="cmd-row"><span class="cmd">:dry &lt;query&gt;</span><span class="cmd-desc">Plan without executing</span></div>
+    <div class="cmd-row"><span class="cmd">:cf &lt;action&gt;</span><span class="cmd-desc">Counterfactual for last query</span></div>
+    <div class="cmd-row"><span class="cmd">:audit</span><span class="cmd-desc">Policy audit — prune dead and overgeneralized rules</span></div>
+    <div class="cmd-row"><span class="cmd">:drift</span><span class="cmd-desc">Behavioral drift report over time</span></div>
+    <div class="cmd-row"><span class="cmd">:registry</span><span class="cmd-desc">All registered modules and their declared contracts</span></div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-left">MIT License &nbsp;·&nbsp; Python 3.9+ &nbsp;·&nbsp; Ollama</div>
+    <a class="github-link" href="https://github.com/haynbroit-alt/Agent-OS" target="_blank" rel="noopener">
+      ↗ GitHub
+    </a>
+  </div>
+
+</div>
+<script>
+  // ── Terminal demo ─────────────────────────────────────────────────────────
+  (function termDemo() {
+    const body = document.getElementById('term-body');
+    if (!body) return;
+
+    const SCRIPT = [
+      { k: 'sh',    t: 'egos',                              pre: 500,  post: 350 },
+      { k: 'info',  t: 'Execution Graph OS · local-first',  pre: 0,    post: 250 },
+      { k: 'blank', t: '',                                  pre: 0,    post: 0   },
+      { k: 'in',    t: 'list files',                        pre: 700,  post: 380 },
+      { k: 'node',  t: '[context]  2 episodes found',       pre: 0,    post: 110 },
+      { k: 'node',  t: '[planner]  shell:ls  score=8.4',    pre: 0,    post: 110 },
+      { k: 'node',  t: '[policy]   bypass=false  cost=2',   pre: 0,    post: 110 },
+      { k: 'ok',    t: '[executor] $ ls',                   pre: 0,    post: 80  },
+      { k: 'dim',   t: '  README.md  core/  modules/',      pre: 0,    post: 80  },
+      { k: 'node',  t: '[observer] reward=9.0  logged',     pre: 0,    post: 650 },
+      { k: 'blank', t: '',                                  pre: 0,    post: 0   },
+      { k: 'in',    t: ':dry rm -rf /',                     pre: 600,  post: 350 },
+      { k: 'warn',  t: '[dry-run]  would_block=true',       pre: 0,    post: 80  },
+      { k: 'warn',  t: '  "rm" not in ALLOWED_COMMANDS',    pre: 0,    post: 650 },
+      { k: 'blank', t: '',                                  pre: 0,    post: 0   },
+      { k: 'in',    t: ':diagnose',                         pre: 600,  post: 350 },
+      { k: 'dim',   t: '  success_rate=0.94  reward=8.7',   pre: 0,    post: 80  },
+      { k: 'dim',   t: '  drift=stable  contradictions=0',  pre: 0,    post: 80  },
+      { k: 'ok',    t: '  top_action: shell:ls  (62%)',     pre: 0,    post: 2200},
+    ];
+
+    const COL = {
+      sh:   '#555', info: '#303030', in: '#e8e8e8',
+      node: '#444', ok:  '#4ade80', warn: '#f59e0b', dim: '#555',
+    };
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const esc   = s  => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    async function loop() {
+      for (;;) {
+        body.innerHTML = '';
+        for (const step of SCRIPT) {
+          if (step.pre) await sleep(step.pre);
+          const row = document.createElement('div');
+          body.appendChild(row);
+
+          if (step.k === 'blank') { row.innerHTML = '&#8203;'; continue; }
+
+          if (step.k === 'sh' || step.k === 'in') {
+            row.innerHTML = step.k === 'sh'
+              ? '<span style="color:#333">$</span> '
+              : '<span style="color:#4ade80">›</span> ';
+            const cur = document.createElement('span');
+            cur.className = 'blink'; cur.style.color = '#4ade80'; cur.textContent = '▋';
+            row.appendChild(cur);
+            for (const ch of step.t) {
+              cur.insertAdjacentHTML('beforebegin',
+                `<span style="color:${COL[step.k]}">${esc(ch)}</span>`);
+              await sleep(43);
+            }
+            await sleep(step.post);
+            cur.remove();
+          } else {
+            row.innerHTML = `<span style="color:${COL[step.k]}">${esc(step.t)}</span>`;
+            if (step.post) await sleep(step.post);
+          }
+        }
+        await sleep(2500);
+      }
+    }
+
+    loop();
+  })();
+
+  // ── Graph traversal animation ─────────────────────────────────────────────
+  const nodes    = Array.from(document.querySelectorAll('.graph .node'));
+  const graphEl  = document.querySelector('.graph');
+  const caption  = document.querySelector('.graph-caption');
+
+  let step   = 0;
+  let loopId = null;
+
+  function resetNodes() {
+    nodes.forEach(n => { n.classList.remove('active', 'visited'); });
+  }
+
+  function tick() {
+    resetNodes();
+    for (let i = 0; i < step; i++) nodes[i].classList.add('visited');
+    nodes[step].classList.add('active');
+    step = (step + 1) % nodes.length;
+    loopId = setTimeout(tick, step === 0 ? 1200 : 550);
+  }
+
+  function restartAnimation() {
+    clearTimeout(loopId);
+    step = 0;
+    tick();
+  }
+
+  restartAnimation();
+  graphEl.addEventListener('click', restartAnimation);
+
+  // ── Copy-to-clipboard on install lines ───────────────────────────────────
+  document.querySelectorAll('.install-line').forEach(line => {
+    const cmd   = line.querySelector('span:nth-child(2)').textContent.trim();
+    const badge = line.querySelector('.copy-badge');
+
+    line.addEventListener('click', () => {
+      navigator.clipboard.writeText(cmd).then(() => {
+        badge.textContent = 'copied!';
+        line.classList.add('copied');
+        setTimeout(() => {
+          badge.textContent = 'copy';
+          line.classList.remove('copied');
+        }, 1500);
+      });
+    });
+  });
+</script>
+</body>
+</html>
