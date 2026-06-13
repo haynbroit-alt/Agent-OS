@@ -10,10 +10,31 @@ def _extract_rule_pattern(user_input, action):
 
 
 def run_agent(user_input, memory, planner, tools, llm,
-              budget=None, policy_cache=None, dry_run=False):
+              budget=None, policy_cache=None, dry_run=False, meta_learner=None):
     if budget is None:
         budget = ACTION_BUDGET
 
+    # ── MetaLearner shortcut: skip LLM for high-confidence known patterns ─────
+    if meta_learner is not None and not dry_run:
+        bypass, shortcut = meta_learner.should_bypass(user_input)
+        if bypass:
+            output, success, cost = tools.execute(shortcut)
+            reward = 0.8 if success else 0.2
+            memory.store(user_input, shortcut, output, reward, cost, success)
+            meta_learner.update(user_input, shortcut, reward, success)
+            result = {
+                "dry_run":       False,
+                "llm_bypassed":  True,
+                "action":        shortcut,
+                "output":        output,
+                "success":       success,
+                "cost":          cost,
+                "budget_left":   budget - cost,
+            }
+            decision_log.log({"input": user_input, **result})
+            return result
+
+    # ── Normal planning path ──────────────────────────────────────────────────
     context_rows = memory.retrieve_relevant(user_input, limit=3)
     context_str = "\n".join(str(r) for r in context_rows) if context_rows else "(no history)"
 
@@ -28,44 +49,36 @@ def run_agent(user_input, memory, planner, tools, llm,
 
     actions = planner.generate_actions(user_input, context_str)
 
-    best_action = None
-    best_score = -999.0
-    best_sim = {}
-
+    best_action, best_score, best_sim = None, -999.0, {}
     for action in actions:
         sim = planner.simulate(action, context_str)
         score = planner.score(action, sim, memory, budget)
         if score > best_score:
-            best_score = score
-            best_action = action
-            best_sim = sim
+            best_score, best_action, best_sim = score, action, sim
 
     if best_action is None:
         result = {
-            "action": None,
-            "output": "no viable action found",
-            "success": False,
-            "budget_left": budget,
-            "dry_run": dry_run,
+            "action": None, "output": "no viable action found",
+            "success": False, "budget_left": budget, "dry_run": dry_run,
         }
         decision_log.log({"input": user_input, **result})
         return result
 
-    # ── Dry-run: plan without executing ───────────────────────────
+    # ── Dry-run: plan without executing ──────────────────────────────────────
     if dry_run:
         result = {
-            "dry_run": True,
-            "action": best_action,
-            "estimated_cost": best_sim.get("cost", "?"),
-            "sim_success": best_sim.get("success"),
-            "sim_reason": best_sim.get("reason"),
-            "score": round(best_score, 3),
+            "dry_run":          True,
+            "action":           best_action,
+            "estimated_cost":   best_sim.get("cost", "?"),
+            "sim_success":      best_sim.get("success"),
+            "sim_reason":       best_sim.get("reason"),
+            "score":            round(best_score, 3),
             "would_be_blocked": tools.would_block(best_action),
         }
         decision_log.log({"input": user_input, **result})
         return result
 
-    # ── Real execution ─────────────────────────────────────────────
+    # ── Real execution ────────────────────────────────────────────────────────
     output, success, cost = tools.execute(best_action)
 
     planner.calibrator.record(best_sim.get("success", False), success)
@@ -73,22 +86,27 @@ def run_agent(user_input, memory, planner, tools, llm,
     reward = 0.8 if success else 0.2
     memory.store(user_input, best_action, output, reward, cost, success)
 
+    if meta_learner is not None:
+        meta_learner.update(user_input, best_action, reward, success)
+
     if success and policy_cache is not None:
         pattern = _extract_rule_pattern(user_input, best_action)
-        existing = [r for r in policy_cache.get_rules("active") if r["pattern"] == pattern]
-        if not existing:
-            confidence = min(0.75, 0.5 + reward * 0.3)
-            policy_cache.add_rule(pattern=pattern, action=best_action, confidence=confidence)
+        if not any(r["pattern"] == pattern for r in policy_cache.get_rules("active")):
+            policy_cache.add_rule(
+                pattern=pattern, action=best_action,
+                confidence=min(0.75, 0.5 + reward * 0.3),
+            )
 
     result = {
-        "dry_run": False,
-        "action": best_action,
-        "output": output,
-        "success": success,
-        "score": round(best_score, 3),
-        "cost": cost,
-        "budget_left": budget - cost,
-        "sim_calibration": round(planner.calibrator.accuracy, 3),
+        "dry_run":          False,
+        "llm_bypassed":     False,
+        "action":           best_action,
+        "output":           output,
+        "success":          success,
+        "score":            round(best_score, 3),
+        "cost":             cost,
+        "budget_left":      budget - cost,
+        "sim_calibration":  round(planner.calibrator.accuracy, 3),
     }
     decision_log.log({"input": user_input, **result})
     return result
