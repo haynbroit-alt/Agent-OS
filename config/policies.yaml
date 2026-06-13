@@ -1,0 +1,14 @@
+# Policy routing thresholds
+# These are the defaults baked into modules/policy.py
+
+meta_learner:
+  min_episodes: 3          # minimum successful occurrences before LLM bypass
+  confidence_threshold: 0.75
+
+audit:
+  min_health: 0.4          # below this → quarantine
+  auto_repair_threshold: 0.3  # below this → full cache purge
+
+bootstrap:
+  min_occurrences: 2       # minimum episodes to promote a pattern to a rule
+  min_reward: 0.7          # minimum avg reward
