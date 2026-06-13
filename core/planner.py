@@ -1,6 +1,33 @@
+class SimulationCalibrator:
+    """Tracks how often the LLM's simulated success prediction matches reality.
+    When calibration is poor, the planner penalises over-confident scores.
+    """
+    _WINDOW = 50
+
+    def __init__(self):
+        self._records = []  # [(predicted: bool, actual: bool)]
+
+    def record(self, predicted_success, actual_success):
+        self._records.append((bool(predicted_success), bool(actual_success)))
+        if len(self._records) > self._WINDOW:
+            self._records.pop(0)
+
+    @property
+    def accuracy(self):
+        if not self._records:
+            return 1.0
+        return sum(p == a for p, a in self._records) / len(self._records)
+
+    @property
+    def calibration_penalty(self):
+        acc = self.accuracy
+        return max(0.0, (0.7 - acc) * 5)  # 0 when accurate, up to 3.5 when acc=0
+
+
 class Planner:
     def __init__(self, llm):
         self.llm = llm
+        self.calibrator = SimulationCalibrator()
 
     def generate_actions(self, user_input, context, n=3):
         prompt = f"""User request: {user_input}
@@ -42,6 +69,9 @@ Evaluate this action. Return valid JSON only:
             if episode[3] and episode[3] > 0.5:
                 historical_bonus += 0.2
 
-        penalty = -2.0 if "error" in sim.get("reason", "").lower() else 0.0
+        error_penalty = -2.0 if "error" in sim.get("reason", "").lower() else 0.0
 
-        return success_p * 10 - cost * 0.5 + historical_bonus + penalty
+        # Discount scores when the LLM's simulations have been unreliable.
+        calibration_penalty = -self.calibrator.calibration_penalty
+
+        return success_p * 10 - cost * 0.5 + historical_bonus + error_penalty + calibration_penalty

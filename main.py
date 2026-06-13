@@ -4,6 +4,7 @@ from core.planner import Planner
 from core.tools import Tools
 from core.loop import run_agent
 from core.policy_cache import PolicyCache, run_audit
+from core.observer import Observer
 from core.utils import pretty
 
 llm = LLM()
@@ -11,9 +12,10 @@ memory = Memory()
 policy_cache = PolicyCache(conn=memory.conn)
 planner = Planner(llm)
 tools = Tools()
+observer = Observer(memory, policy_cache, planner)
 
-print("Agent OS ready. Type 'exit' or 'quit' to stop.")
-print("Special commands: :audit  :cache  :quit")
+print("Agent OS ready.")
+print("Commands: :obs  :clusters  :audit  :cache  :quit")
 
 while True:
     try:
@@ -26,13 +28,17 @@ while True:
         continue
     if q in ("exit", "quit", ":quit"):
         break
+    if q == ":obs":
+        print(pretty(observer.snapshot()))
+        continue
+    if q == ":clusters":
+        print(pretty(observer.trajectory_clusters()))
+        continue
     if q == ":audit":
-        report = run_audit(policy_cache)
-        print(pretty(report))
+        print(pretty(run_audit(policy_cache)))
         continue
     if q == ":cache":
-        rules = policy_cache.get_all_rules()
-        print(pretty(rules))
+        print(pretty(policy_cache.get_all_rules()))
         continue
 
     result = run_agent(q, memory, planner, tools, llm, policy_cache=policy_cache)
