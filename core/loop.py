@@ -1,4 +1,5 @@
 from config import ACTION_BUDGET
+from core import decision_log
 
 
 def _extract_rule_pattern(user_input, action):
@@ -8,11 +9,11 @@ def _extract_rule_pattern(user_input, action):
     return f"{prefix} | {key}"
 
 
-def run_agent(user_input, memory, planner, tools, llm, budget=None, policy_cache=None):
+def run_agent(user_input, memory, planner, tools, llm,
+              budget=None, policy_cache=None, dry_run=False):
     if budget is None:
         budget = ACTION_BUDGET
 
-    # Semantic retrieval: relevant past episodes, not just the most recent ones.
     context_rows = memory.retrieve_relevant(user_input, limit=3)
     context_str = "\n".join(str(r) for r in context_rows) if context_rows else "(no history)"
 
@@ -40,22 +41,38 @@ def run_agent(user_input, memory, planner, tools, llm, budget=None, policy_cache
             best_sim = sim
 
     if best_action is None:
-        return {
+        result = {
             "action": None,
             "output": "no viable action found",
             "success": False,
             "budget_left": budget,
+            "dry_run": dry_run,
         }
+        decision_log.log({"input": user_input, **result})
+        return result
 
+    # ── Dry-run: plan without executing ───────────────────────────
+    if dry_run:
+        result = {
+            "dry_run": True,
+            "action": best_action,
+            "estimated_cost": best_sim.get("cost", "?"),
+            "sim_success": best_sim.get("success"),
+            "sim_reason": best_sim.get("reason"),
+            "score": round(best_score, 3),
+            "would_be_blocked": tools.would_block(best_action),
+        }
+        decision_log.log({"input": user_input, **result})
+        return result
+
+    # ── Real execution ─────────────────────────────────────────────
     output, success, cost = tools.execute(best_action)
 
-    # Update simulation calibration: did the LLM predict the outcome correctly?
     planner.calibrator.record(best_sim.get("success", False), success)
 
     reward = 0.8 if success else 0.2
     memory.store(user_input, best_action, output, reward, cost, success)
 
-    # Auto-extract a policy rule from successful episodes.
     if success and policy_cache is not None:
         pattern = _extract_rule_pattern(user_input, best_action)
         existing = [r for r in policy_cache.get_rules("active") if r["pattern"] == pattern]
@@ -63,7 +80,8 @@ def run_agent(user_input, memory, planner, tools, llm, budget=None, policy_cache
             confidence = min(0.75, 0.5 + reward * 0.3)
             policy_cache.add_rule(pattern=pattern, action=best_action, confidence=confidence)
 
-    return {
+    result = {
+        "dry_run": False,
         "action": best_action,
         "output": output,
         "success": success,
@@ -72,3 +90,5 @@ def run_agent(user_input, memory, planner, tools, llm, budget=None, policy_cache
         "budget_left": budget - cost,
         "sim_calibration": round(planner.calibrator.accuracy, 3),
     }
+    decision_log.log({"input": user_input, **result})
+    return result
