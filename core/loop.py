@@ -1,12 +1,21 @@
 from config import ACTION_BUDGET
 
 
-def run_agent(user_input, memory, planner, tools, llm, budget=None):
+def run_agent(user_input, memory, planner, tools, llm, budget=None, policy_cache=None):
     if budget is None:
         budget = ACTION_BUDGET
 
     context_rows = memory.retrieve(None, 3)
     context_str = "\n".join(str(r) for r in context_rows) if context_rows else "(no history)"
+
+    if policy_cache is not None:
+        cached_rules = policy_cache.get_rules(status="active")
+        if cached_rules:
+            hints = "\n".join(
+                f"- {r['action']} (success_rate={r['success_rate']:.2f})"
+                for r in cached_rules[:3]
+            )
+            context_str += f"\nCached high-value actions:\n{hints}"
 
     actions = planner.generate_actions(user_input, context_str)
 
