@@ -209,6 +209,43 @@
 
     /* Divider */
     hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+    /* Graph animation */
+    .node {
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+    .node.visited {
+      border-color: #2a5c3a;
+      color: #4ade80aa;
+      background: #111f16;
+    }
+
+    /* Copy feedback */
+    .install-line {
+      cursor: pointer;
+      position: relative;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .install-line:hover { background: #1c1c1c; }
+
+    .copy-badge {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--muted);
+      opacity: 0;
+      transition: opacity 0.15s;
+      user-select: none;
+    }
+    .install-line:hover .copy-badge { opacity: 1; }
+    .install-line.copied .copy-badge {
+      color: var(--accent);
+      opacity: 1;
+    }
+
+    /* Graph tap hint */
+    .graph-caption { cursor: default; }
+    .graph { cursor: pointer; }
   </style>
 </head>
 <body>
@@ -247,14 +284,17 @@
     <div class="install-line">
       <span class="prompt">$</span>
       <span>pip install -e .</span>
+      <span class="copy-badge">copy</span>
     </div>
     <div class="install-line">
       <span class="prompt">$</span>
       <span>ollama pull llama3.2</span>
+      <span class="copy-badge">copy</span>
     </div>
     <div class="install-line">
       <span class="prompt">$</span>
       <span>egos</span>
+      <span class="copy-badge">copy</span>
     </div>
   </div>
 
@@ -326,5 +366,52 @@
   </div>
 
 </div>
+<script>
+  // ── Graph traversal animation ─────────────────────────────────────────────
+  const nodes    = Array.from(document.querySelectorAll('.graph .node'));
+  const graphEl  = document.querySelector('.graph');
+  const caption  = document.querySelector('.graph-caption');
+
+  let step   = 0;
+  let loopId = null;
+
+  function resetNodes() {
+    nodes.forEach(n => { n.classList.remove('active', 'visited'); });
+  }
+
+  function tick() {
+    resetNodes();
+    for (let i = 0; i < step; i++) nodes[i].classList.add('visited');
+    nodes[step].classList.add('active');
+    step = (step + 1) % nodes.length;
+    loopId = setTimeout(tick, step === 0 ? 1200 : 550);
+  }
+
+  function restartAnimation() {
+    clearTimeout(loopId);
+    step = 0;
+    tick();
+  }
+
+  restartAnimation();
+  graphEl.addEventListener('click', restartAnimation);
+
+  // ── Copy-to-clipboard on install lines ───────────────────────────────────
+  document.querySelectorAll('.install-line').forEach(line => {
+    const cmd   = line.querySelector('span:nth-child(2)').textContent.trim();
+    const badge = line.querySelector('.copy-badge');
+
+    line.addEventListener('click', () => {
+      navigator.clipboard.writeText(cmd).then(() => {
+        badge.textContent = 'copied!';
+        line.classList.add('copied');
+        setTimeout(() => {
+          badge.textContent = 'copy';
+          line.classList.remove('copied');
+        }, 1500);
+      });
+    });
+  });
+</script>
 </body>
 </html>
